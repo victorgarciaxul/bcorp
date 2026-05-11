@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, ClipboardList, MessageSquare, BarChart2, LogOut } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { isDemoMode, exitDemo } from '../../lib/demo'
+import { isLocalAuth, clearLocalAuth } from '../../lib/demo'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -12,11 +12,9 @@ const nav = [
 
 export default function Sidebar() {
   const navigate = useNavigate()
-  const demo = isDemoMode()
-
   const handleLogout = async () => {
-    if (demo) {
-      exitDemo()
+    if (isLocalAuth()) {
+      clearLocalAuth()
       navigate('/login')
     } else {
       await supabase.auth.signOut()
@@ -57,19 +55,13 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {demo && (
-        <div className="mx-3 mb-2 px-3 py-2 bg-amber-500/20 rounded-lg">
-          <p className="text-amber-300 text-xs font-medium">Modo demo</p>
-          <p className="text-amber-400/70 text-xs">Datos de ejemplo</p>
-        </div>
-      )}
       <div className="px-3 py-4 border-t border-gray-800">
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
         >
           <LogOut size={18} />
-          {demo ? 'Salir del demo' : 'Cerrar sesión'}
+          Cerrar sesión
         </button>
       </div>
     </aside>

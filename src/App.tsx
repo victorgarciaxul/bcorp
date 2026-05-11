@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
-import { isDemoMode } from './lib/demo'
+import { isLocalAuth } from './lib/demo'
 import type { Session } from '@supabase/supabase-js'
 import Layout from './components/layout/Layout'
 import Login from './pages/Login'
@@ -13,7 +13,7 @@ import SuggestionForm from './pages/public/SuggestionForm'
 import SurveyFormPage from './pages/public/SurveyFormPage'
 
 function ProtectedRoute({ children, session }: { children: React.ReactNode; session: Session | null }) {
-  if (!isDemoMode() && !session) return <Navigate to="/login" replace />
+  if (!isLocalAuth() && !session) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
@@ -21,7 +21,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
 
   useEffect(() => {
-    if (isDemoMode()) { setSession(null); return }
+    if (isLocalAuth()) { setSession(null); return }
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => subscription.unsubscribe()
@@ -39,7 +39,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Rutas públicas */}
-        <Route path="/login" element={(isDemoMode() || session) ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/login" element={(isLocalAuth() || session) ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/formulario/sugerencia" element={<SuggestionForm type="external" />} />
         <Route path="/formulario/sugerencia-interna" element={<SuggestionForm type="internal" />} />
         <Route path="/encuesta/:token" element={<SurveyFormPage />} />
