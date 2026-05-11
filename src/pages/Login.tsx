@@ -81,36 +81,33 @@ function BCorpIcon({ size = 56 }: { size?: number }) {
   return (
     <svg width={size} height={h} viewBox="0 0 100 122" xmlns="http://www.w3.org/2000/svg">
       {/* Círculo exterior — trazo grueso, sin relleno */}
-      <circle cx="50" cy="46" r="39" stroke="white" strokeWidth="7" fill="none" />
+      <circle cx="50" cy="46" r="39" stroke="white" strokeWidth="6.5" fill="none" />
 
-      {/* Letra B trazada como path con evenodd para los huecos interiores */}
+      {/*
+        Letra B: spine vertical + dos bumps D-shape con evenodd.
+        Subpath 1: silueta exterior completa (spine + bump superior + bump inferior).
+        Subpath 2 y 3: hueco interior de cada bump → crean el vaciado.
+      */}
       <path
         fill="white"
         fillRule="evenodd"
         d="
-          M 21,13 L 21,80 L 46,80
-          C 68,80 76,69 76,61
-          C 76,53 70,47 61,45
-          C 69,42 73,36 73,29
-          C 73,18 66,13 46,13 Z
+          M 24,14 L 39,14
+          A 31,16 0 0,1 39,46
+          A 35,16 0 0,1 39,78
+          L 24,78 Z
 
-          M 33,23 L 44,23
-          C 57,23 62,27 62,32
-          C 62,37 57,43 44,43
-          L 33,43 Z
+          M 39,21 A 22,10.5 0 0,1 39,42 Z
 
-          M 33,53 L 44,53
-          C 59,53 64,57 64,62
-          C 64,68 59,71 44,71
-          L 33,71 Z
+          M 39,50 A 25,11   0 0,1 39,72 Z
         "
       />
 
       {/* Barra horizontal inferior */}
-      <rect x="7" y="97" width="74" height="9" fill="white" />
+      <rect x="11" y="97" width="68" height="8" fill="white" />
 
-      {/* ® — alineado a la derecha de la barra */}
-      <text x="86" y="113" fill="white" fontSize="10" fontFamily="serif" fontWeight="400">®</text>
+      {/* ® — a la derecha de la barra */}
+      <text x="82" y="112" fill="white" fontSize="11" fontFamily="serif">®</text>
     </svg>
   )
 }
