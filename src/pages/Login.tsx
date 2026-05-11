@@ -180,7 +180,7 @@ export default function Login() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-7">
           <BCorpIcon size={56} />
-          <h1 className="text-white text-2xl font-bold mt-3 tracking-tight"></h1>
+          <h1 className="text-white text-2xl font-bold mt-3 tracking-tight">BCORP</h1>
           <p className="text-xs font-semibold tracking-[0.2em] mt-0.5 whitespace-nowrap"
              style={{ color: 'rgba(134,239,172,0.7)' }}>
             SEGUIMIENTO Y CERTIFICACIÓN · XUL
