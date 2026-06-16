@@ -129,6 +129,7 @@ export default function Login() {
     setTimeout(() => {
       if (checkLocalCredentials(email, password)) {
         setLocalAuth()
+        localStorage.setItem('xul_tracker_email', email)
         navigate('/')
       } else {
         setError('Credenciales incorrectas. Inténtalo de nuevo.')
