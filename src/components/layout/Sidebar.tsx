@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, ClipboardList, MessageSquare, BarChart2, LogOut } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
-import { isLocalAuth, clearLocalAuth } from '../../lib/demo'
+import { clearLocalAuth } from '../../lib/demo'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -12,30 +11,18 @@ const nav = [
 
 export default function Sidebar() {
   const navigate = useNavigate()
-  const handleLogout = async () => {
-    if (isLocalAuth()) {
-      clearLocalAuth()
-      navigate('/login')
-    } else {
-      await supabase.auth.signOut()
-    }
+  const handleLogout = () => {
+    clearLocalAuth()
+    navigate('/login')
   }
 
   return (
-    <aside className="w-64 min-h-screen bg-gray-900 flex flex-col">
-      <div className="px-6 py-6 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
-            <span className="text-white text-xs font-bold">XUL</span>
-          </div>
-          <div>
-            <p className="text-white font-semibold text-sm">XUL B Corp</p>
-            <p className="text-gray-400 text-xs">Panel de gestión</p>
-          </div>
-        </div>
+    <aside className="fixed top-4 left-4 bottom-4 w-56 bg-[#16162a]/90 backdrop-blur-md border border-[#2a2a4a] rounded-2xl flex flex-col z-40 shadow-2xl">
+      <div className="px-4 py-4 border-b border-[#2a2a4a] flex items-center justify-center">
+        <img src="/logo.webp" alt="Logo" className="h-14 object-contain" />
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-2 py-3 space-y-0.5">
         {nav.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -45,7 +32,7 @@ export default function Sidebar() {
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 isActive
                   ? 'bg-violet-600 text-white'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  : 'text-gray-400 hover:bg-[#2a2a4a] hover:text-white'
               }`
             }
           >
@@ -55,15 +42,6 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 py-4 border-t border-gray-800">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
-        >
-          <LogOut size={18} />
-          Cerrar sesión
-        </button>
-      </div>
     </aside>
   )
 }
