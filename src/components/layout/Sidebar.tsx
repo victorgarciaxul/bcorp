@@ -1,6 +1,5 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, MessageSquare, BarChart2, LogOut } from 'lucide-react'
-import { clearLocalAuth } from '../../lib/demo'
+import { NavLink } from 'react-router-dom'
+import { LayoutDashboard, ClipboardList, MessageSquare, BarChart2 } from 'lucide-react'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -10,11 +9,6 @@ const nav = [
 ]
 
 export default function Sidebar() {
-  const navigate = useNavigate()
-  const handleLogout = () => {
-    clearLocalAuth()
-    navigate('/login')
-  }
 
   return (
     <aside className="fixed top-4 left-4 bottom-4 w-56 bg-[#16162a]/90 backdrop-blur-md border border-[#2a2a4a] rounded-2xl flex flex-col z-40 shadow-2xl">
