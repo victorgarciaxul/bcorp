@@ -23,7 +23,7 @@ import SuggestionForm from './pages/public/SuggestionForm'
 import SurveyFormPage from './pages/public/SurveyFormPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  if (!isLocalAuth()) return <Navigate to="/login" replace />
+  if (!isLocalAuth()) { window.location.replace('https://appcenter.xul.es'); return null; }
   return <>{children}</>
 }
 
