@@ -76,6 +76,32 @@ function ParticleCanvas() {
 }
 
 
+// ── Icono B Corp (logo oficial recreado en blanco) ──────────────────
+function BCorpIcon({ size = 56 }: { size?: number }) {
+  const h = Math.round(size * 1.22)
+  return (
+    <svg width={size} height={h} viewBox="0 0 100 122" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="46" r="39" stroke="white" strokeWidth="6.5" fill="none" />
+      <path
+        fill="white"
+        fillRule="evenodd"
+        d="
+          M 24,14 L 39,14
+          A 31,16 0 0,1 39,46
+          A 35,16 0 0,1 39,78
+          L 24,78 Z
+
+          M 39,21 A 22,10.5 0 0,1 39,42 Z
+
+          M 39,50 A 25,11   0 0,1 39,72 Z
+        "
+      />
+      <rect x="11" y="97" width="68" height="8" fill="white" />
+      <text x="82" y="112" fill="white" fontSize="11" fontFamily="serif">®</text>
+    </svg>
+  )
+}
+
 // ── Página principal ────────────────────────────────────────────────
 export default function Login() {
   const [email, setEmail]       = useState('')
@@ -156,8 +182,13 @@ export default function Login() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-7">
-          <img src="/logo.webp" alt="Logo" className="h-20 object-contain" />
-          <p className="text-sm mt-4" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <BCorpIcon size={56} />
+          <h1 className="text-white text-2xl font-bold mt-3 tracking-tight">BCORP</h1>
+          <p className="text-xs font-semibold tracking-[0.2em] mt-0.5 whitespace-nowrap"
+             style={{ color: 'rgba(134,239,172,0.7)' }}>
+            SEGUIMIENTO Y CERTIFICACIÓN · XUL
+          </p>
+          <p className="text-sm mt-3" style={{ color: 'rgba(255,255,255,0.4)' }}>
             Bienvenido/a. Introduce tus credenciales.
           </p>
         </div>
