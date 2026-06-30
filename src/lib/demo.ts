@@ -9,9 +9,9 @@ const LOCAL_PASSWORD = 'Xul14$'
 export const checkLocalCredentials = (email: string, password: string) =>
   ALLOWED_EMAILS.includes(email.toLowerCase()) && password === LOCAL_PASSWORD
 
-export const isLocalAuth = () => localStorage.getItem('xul_appcenter_auth') === '1'
-export const setLocalAuth = () => localStorage.setItem('xul_appcenter_auth', '1')
-export const clearLocalAuth = () => localStorage.removeItem('xul_appcenter_auth')
+export const isLocalAuth = () => sessionStorage.getItem('xul_appcenter_auth') === '1'
+export const setLocalAuth = () => sessionStorage.setItem('xul_appcenter_auth', '1')
+export const clearLocalAuth = () => sessionStorage.removeItem('xul_appcenter_auth')
 
 // Demo mode = auth local activa (sin Supabase)
 export const isDemoMode = () => isLocalAuth()
