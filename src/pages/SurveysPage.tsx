@@ -176,7 +176,7 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
       setLoadingResults(true)
       const qs = await sql`SELECT * FROM survey_questions WHERE survey_id = ${survey.id} ORDER BY order_index`
       const rs = await sql`
-        SELECT sr.*, json_agg(sa.*) AS survey_answers
+        SELECT sr.*, COALESCE(json_agg(sa.*) FILTER (WHERE sa.id IS NOT NULL), '[]') AS survey_answers
         FROM survey_responses sr
         LEFT JOIN survey_answers sa ON sa.response_id = sr.id
         WHERE sr.survey_id = ${survey.id} AND sr.submitted_at IS NOT NULL

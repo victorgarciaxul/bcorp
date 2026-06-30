@@ -9,13 +9,13 @@ export const CATEGORIES = [
 ] as const
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'Gobernanza y propósito': 'bg-violet-100 text-violet-800',
-  'Trabajo justo': 'bg-blue-100 text-blue-800',
-  'JEDI': 'bg-pink-100 text-pink-800',
-  'Derechos humanos': 'bg-red-100 text-red-800',
-  'Acción climática': 'bg-green-100 text-green-800',
-  'Circularidad y gestión ambiental': 'bg-teal-100 text-teal-800',
-  'A. Gubernamentales y A. Colectiva': 'bg-orange-100 text-orange-800',
+  'Gobernanza y propósito': 'bg-violet-900/50 text-violet-300',
+  'Trabajo justo': 'bg-blue-900/50 text-blue-300',
+  'JEDI': 'bg-pink-900/50 text-pink-300',
+  'Derechos humanos': 'bg-red-900/50 text-red-300',
+  'Acción climática': 'bg-green-900/50 text-green-300',
+  'Circularidad y gestión ambiental': 'bg-teal-900/50 text-teal-300',
+  'A. Gubernamentales y A. Colectiva': 'bg-orange-900/50 text-orange-300',
 }
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -26,10 +26,10 @@ export const STATUS_LABELS: Record<string, string> = {
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  no_iniciado: 'bg-gray-100 text-gray-600',
-  trabajando: 'bg-blue-100 text-blue-700',
-  pdt_revision: 'bg-yellow-100 text-yellow-700',
-  finalizado: 'bg-green-100 text-green-700',
+  no_iniciado: 'bg-gray-800 text-gray-400',
+  trabajando: 'bg-blue-900/50 text-blue-300',
+  pdt_revision: 'bg-yellow-900/50 text-yellow-300',
+  finalizado: 'bg-green-900/50 text-green-300',
 }
 
 export const STATUS_DOT: Record<string, string> = {
