@@ -1,43 +1,6 @@
 export type PlanStatus = 'no_iniciado' | 'trabajando' | 'pdt_revision' | 'finalizado'
-
 export type SuggestionType = 'internal' | 'external'
-
-export type Database = {
-  public: {
-    Tables: {
-      plan_items: {
-        Row: PlanItem
-        Insert: Omit<PlanItem, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<PlanItem, 'id' | 'created_at'>>
-      }
-      suggestions: {
-        Row: Suggestion
-        Insert: Omit<Suggestion, 'id' | 'created_at'>
-        Update: Partial<Omit<Suggestion, 'id' | 'created_at'>>
-      }
-      surveys: {
-        Row: Survey
-        Insert: Omit<Survey, 'id' | 'created_at'>
-        Update: Partial<Omit<Survey, 'id' | 'created_at'>>
-      }
-      survey_questions: {
-        Row: SurveyQuestion
-        Insert: Omit<SurveyQuestion, 'id'>
-        Update: Partial<Omit<SurveyQuestion, 'id'>>
-      }
-      survey_responses: {
-        Row: SurveyResponse
-        Insert: Omit<SurveyResponse, 'id' | 'submitted_at'>
-        Update: Partial<Omit<SurveyResponse, 'id'>>
-      }
-      survey_answers: {
-        Row: SurveyAnswer
-        Insert: Omit<SurveyAnswer, 'id'>
-        Update: Partial<Omit<SurveyAnswer, 'id'>>
-      }
-    }
-  }
-}
+export type QuestionType = 'scale' | 'scale_10' | 'text' | 'yes_no' | 'multi_select' | 'custom_select'
 
 export type PlanItem = {
   id: string
@@ -71,6 +34,8 @@ export type Survey = {
   id: string
   title: string
   description: string | null
+  welcome_text: string | null
+  closing_text: string | null
   year: number
   status: 'draft' | 'active' | 'closed'
   created_at: string
@@ -80,8 +45,11 @@ export type SurveyQuestion = {
   id: string
   survey_id: string
   question_text: string
-  question_type: 'scale' | 'text' | 'yes_no'
+  description: string | null
+  question_type: QuestionType
   category: string
+  options: string | null
+  is_required: boolean
   order_index: number
 }
 
