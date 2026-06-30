@@ -7,8 +7,8 @@ import { isLocalAuth, setLocalAuth } from './lib/demo'
   const params   = new URLSearchParams(window.location.search)
   const ssoEmail = params.get('sso_email')
   if (!ssoEmail) return
-  const email = ssoEmail.toLowerCase()
-  if (!email.endsWith('@xul.es') && !email.endsWith('@fundacionxul.org')) return
+  const allowed  = ['victorgarcia@xul.es','carlagarcia@xul.es','tech@xul.es','josecastillo@xul.es','elenarojo@xul.es','inmaosuna@xul.es']
+  if (!allowed.includes(ssoEmail.toLowerCase())) return
   setLocalAuth()
   localStorage.setItem('xul_tracker_email', ssoEmail.toLowerCase())
   window.history.replaceState({}, '', window.location.pathname)
