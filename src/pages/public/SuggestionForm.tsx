@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase'
+import { sql } from '../../lib/db'
 
 interface Props {
   type: 'internal' | 'external'
@@ -21,16 +21,18 @@ export default function SuggestionForm({ type }: Props) {
     setError('')
 
     try {
-      const { error: insertError } = await supabase.from('suggestions').insert([{
-        type,
-        author_name: isAnonymous ? null : authorName || null,
-        email: isAnonymous ? null : email || null,
-        is_anonymous: isAnonymous,
-        subject,
-        message,
-        status: 'new',
-      }])
-      if (insertError) throw insertError
+      await sql`
+        INSERT INTO suggestions (type, author_name, email, is_anonymous, subject, message, status)
+        VALUES (
+          ${type},
+          ${isAnonymous ? null : authorName || null},
+          ${isAnonymous ? null : email || null},
+          ${isAnonymous},
+          ${subject},
+          ${message},
+          'new'
+        )
+      `
       setSubmitted(true)
     } catch {
       setError('Ha ocurrido un error. Inténtalo de nuevo.')

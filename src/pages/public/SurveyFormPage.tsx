@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { sql } from '../../lib/db'
 import type { Survey, SurveyQuestion } from '../../lib/database.types'
 
 export default function SurveyFormPage() {
@@ -19,49 +19,41 @@ export default function SurveyFormPage() {
     const load = async () => {
       if (!token) { setError('Enlace inválido.'); setLoading(false); return }
 
-      // Try as individual response token first
       let surveyId: string
       let respId: string
-      const { data: byToken } = await supabase
-        .from('survey_responses')
-        .select('id, survey_id, submitted_at')
-        .eq('token', token)
-        .limit(1)
-        .single()
 
-      if (byToken) {
-        if (byToken.submitted_at) { setSubmitted(true); setLoading(false); return }
-        respId = byToken.id
-        surveyId = byToken.survey_id
+      // Try as individual response token first
+      const byToken = await sql`SELECT id, survey_id, submitted_at FROM survey_responses WHERE token = ${token} LIMIT 1`
+
+      if (byToken[0]) {
+        if (byToken[0].submitted_at) { setSubmitted(true); setLoading(false); return }
+        respId = byToken[0].id as string
+        surveyId = byToken[0].survey_id as string
       } else {
         // Try as survey ID (public link) — create a new anonymous response
-        const { data: surveyRow } = await supabase
-          .from('surveys')
-          .select('id, status')
-          .eq('id', token)
-          .single()
-        if (!surveyRow) { setError('Enlace no encontrado o expirado.'); setLoading(false); return }
-        if (surveyRow.status !== 'active') { setError('Esta encuesta no está activa.'); setLoading(false); return }
+        const bySurveyId = await sql`SELECT id, status FROM surveys WHERE id = ${token} LIMIT 1`
+        if (!bySurveyId[0]) { setError('Enlace no encontrado o expirado.'); setLoading(false); return }
+        if (bySurveyId[0].status !== 'active') { setError('Esta encuesta no está activa.'); setLoading(false); return }
 
-        const { data: newResp, error: insertErr } = await supabase
-          .from('survey_responses')
-          .insert([{ survey_id: token, is_anonymous: true } as Record<string, unknown>])
-          .select('id, survey_id, submitted_at')
-          .single()
-        if (insertErr || !newResp) { setError('Error al cargar la encuesta.'); setLoading(false); return }
-        respId = newResp.id
-        surveyId = newResp.survey_id
+        const newResp = await sql`
+          INSERT INTO survey_responses (id, survey_id, token, is_anonymous)
+          VALUES (gen_random_uuid(), ${token}, gen_random_uuid()::text, true)
+          RETURNING id, survey_id, submitted_at
+        `
+        if (!newResp[0]) { setError('Error al cargar la encuesta.'); setLoading(false); return }
+        respId = newResp[0].id as string
+        surveyId = newResp[0].survey_id as string
       }
 
       setResponseId(respId)
 
-      const [{ data: surveyData }, { data: qs }] = await Promise.all([
-        supabase.from('surveys').select('*').eq('id', surveyId).single(),
-        supabase.from('survey_questions').select('*').eq('survey_id', surveyId).order('order_index'),
+      const [surveyData, qs] = await Promise.all([
+        sql`SELECT * FROM surveys WHERE id = ${surveyId} LIMIT 1`,
+        sql`SELECT * FROM survey_questions WHERE survey_id = ${surveyId} ORDER BY order_index`,
       ])
 
-      setSurvey(surveyData as Survey)
-      setQuestions((qs ?? []) as SurveyQuestion[])
+      setSurvey(surveyData[0] as Survey)
+      setQuestions(qs as SurveyQuestion[])
       setLoading(false)
     }
     load()
@@ -83,7 +75,6 @@ export default function SurveyFormPage() {
     e.preventDefault()
     if (!responseId) return
 
-    // Validate required questions
     const missing = questions.filter(q => {
       if (!q.is_required) return false
       const ans = answers[q.id]
@@ -100,25 +91,25 @@ export default function SurveyFormPage() {
     setSubmitting(true)
     setError('')
 
-    const answersToInsert = questions
-      .map(q => {
-        const ans = answers[q.id]
-        if (ans === undefined || ans === null) return null
-        let answerText: string | null = null
-        let answerScale: number | null = null
-        if (q.question_type === 'scale' || q.question_type === 'scale_10') {
-          answerScale = typeof ans === 'number' ? ans : null
-        } else if (q.question_type === 'multi_select') {
-          answerText = Array.isArray(ans) ? ans.join(', ') : String(ans)
-        } else {
-          answerText = String(ans)
-        }
-        return { response_id: responseId, question_id: q.id, answer_text: answerText, answer_scale: answerScale }
-      })
-      .filter(Boolean)
+    for (const q of questions) {
+      const ans = answers[q.id]
+      if (ans === undefined || ans === null) continue
+      let answerText: string | null = null
+      let answerScale: number | null = null
+      if (q.question_type === 'scale' || q.question_type === 'scale_10') {
+        answerScale = typeof ans === 'number' ? ans : null
+      } else if (q.question_type === 'multi_select') {
+        answerText = Array.isArray(ans) ? ans.join(', ') : String(ans)
+      } else {
+        answerText = String(ans)
+      }
+      await sql`
+        INSERT INTO survey_answers (response_id, question_id, answer_text, answer_scale)
+        VALUES (${responseId}, ${q.id}, ${answerText}, ${answerScale})
+      `
+    }
 
-    await supabase.from('survey_answers').insert(answersToInsert as Record<string, unknown>[])
-    await supabase.from('survey_responses').update({ submitted_at: new Date().toISOString() } as Record<string, unknown>).eq('id', responseId)
+    await sql`UPDATE survey_responses SET submitted_at = NOW() WHERE id = ${responseId}`
 
     setSubmitted(true)
     setSubmitting(false)
@@ -147,9 +138,6 @@ export default function SurveyFormPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-lg w-full overflow-hidden">
           <div className="bg-violet-600 px-8 py-6">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center mb-4">
-              <span className="text-white text-xs font-bold">XUL</span>
-            </div>
             <h1 className="text-xl font-bold text-white">{survey?.title}</h1>
           </div>
           <div className="p-8 text-center">
@@ -168,15 +156,11 @@ export default function SurveyFormPage() {
     )
   }
 
-  // Welcome screen before starting
   if (!started && survey?.welcome_text) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-2xl w-full overflow-hidden">
           <div className="bg-violet-600 px-8 py-6">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center mb-3">
-              <span className="text-white text-xs font-bold">XUL</span>
-            </div>
             <h1 className="text-2xl font-bold text-white">{survey.title}</h1>
             {survey.description && <p className="text-violet-200 text-sm mt-2">{survey.description}</p>}
           </div>
@@ -201,11 +185,6 @@ export default function SurveyFormPage() {
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div className="bg-violet-600 px-8 py-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">XUL</span>
-              </div>
-            </div>
             <h1 className="text-xl font-bold text-white">{survey?.title}</h1>
             <p className="text-violet-200 text-xs mt-2">Tus respuestas son completamente confidenciales</p>
           </div>
@@ -224,21 +203,16 @@ export default function SurveyFormPage() {
                   )}
                 </div>
 
-                {/* Escala 1–5 */}
                 {q.question_type === 'scale' && (
                   <div className="ml-5">
                     <div className="flex gap-2">
                       {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setAnswer(q.id, v)}
+                        <button key={v} type="button" onClick={() => setAnswer(q.id, v)}
                           className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
                             answers[q.id] === v
                               ? 'bg-violet-600 text-white border-violet-600 shadow-md scale-105'
                               : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300 hover:bg-violet-50'
-                          }`}
-                        >
+                          }`}>
                           {v}
                         </button>
                       ))}
@@ -250,25 +224,18 @@ export default function SurveyFormPage() {
                   </div>
                 )}
 
-                {/* Escala 1–10 (eNPS) */}
                 {q.question_type === 'scale_10' && (
                   <div className="ml-5">
                     <div className="flex gap-1.5 flex-wrap">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setAnswer(q.id, v)}
+                        <button key={v} type="button" onClick={() => setAnswer(q.id, v)}
                           className={`w-10 h-10 rounded-lg text-sm font-bold border-2 transition-all ${
                             answers[q.id] === v
                               ? 'bg-violet-600 text-white border-violet-600 shadow-md'
-                              : v <= 6
-                              ? 'bg-white text-gray-500 border-gray-200 hover:border-red-300 hover:bg-red-50'
-                              : v <= 8
-                              ? 'bg-white text-gray-500 border-gray-200 hover:border-yellow-300 hover:bg-yellow-50'
+                              : v <= 6 ? 'bg-white text-gray-500 border-gray-200 hover:border-red-300 hover:bg-red-50'
+                              : v <= 8 ? 'bg-white text-gray-500 border-gray-200 hover:border-yellow-300 hover:bg-yellow-50'
                               : 'bg-white text-gray-500 border-gray-200 hover:border-green-300 hover:bg-green-50'
-                          }`}
-                        >
+                          }`}>
                           {v}
                         </button>
                       ))}
@@ -280,32 +247,19 @@ export default function SurveyFormPage() {
                   </div>
                 )}
 
-                {/* Texto libre */}
                 {q.question_type === 'text' && (
-                  <textarea
-                    value={(answers[q.id] as string) ?? ''}
-                    onChange={e => setAnswer(q.id, e.target.value)}
-                    rows={3}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none text-gray-700 placeholder-gray-400"
-                    placeholder="Escribe tu respuesta aquí..."
-                  />
+                  <textarea value={(answers[q.id] as string) ?? ''} onChange={e => setAnswer(q.id, e.target.value)}
+                    rows={3} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none text-gray-700 placeholder-gray-400"
+                    placeholder="Escribe tu respuesta aquí..." />
                 )}
 
-                {/* Selección múltiple */}
                 {q.question_type === 'multi_select' && q.options && (
                   <div className="ml-5 space-y-2">
                     {q.options.split('\n').filter(Boolean).map(option => {
-                      const selected = ((answers[q.id] as string[] | undefined) ?? []).includes(option)
+                      const sel = ((answers[q.id] as string[] | undefined) ?? []).includes(option)
                       return (
-                        <label key={option} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                          selected ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200 hover:bg-gray-50'
-                        }`}>
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() => toggleMultiSelect(q.id, option)}
-                            className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0"
-                          />
+                        <label key={option} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${sel ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200 hover:bg-gray-50'}`}>
+                          <input type="checkbox" checked={sel} onChange={() => toggleMultiSelect(q.id, option)} className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0" />
                           <span className="text-sm text-gray-700">{option}</span>
                         </label>
                       )
@@ -313,22 +267,13 @@ export default function SurveyFormPage() {
                   </div>
                 )}
 
-                {/* Selección única (custom_select) */}
                 {q.question_type === 'custom_select' && q.options && (
                   <div className="ml-5 space-y-2">
                     {q.options.split('\n').filter(Boolean).map(option => {
-                      const selected = answers[q.id] === option
+                      const sel = answers[q.id] === option
                       return (
-                        <label key={option} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                          selected ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200 hover:bg-gray-50'
-                        }`}>
-                          <input
-                            type="radio"
-                            name={q.id}
-                            checked={selected}
-                            onChange={() => setAnswer(q.id, option)}
-                            className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0"
-                          />
+                        <label key={option} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${sel ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name={q.id} checked={sel} onChange={() => setAnswer(q.id, option)} className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0" />
                           <span className="text-sm text-gray-700">{option}</span>
                         </label>
                       )
@@ -336,20 +281,13 @@ export default function SurveyFormPage() {
                   </div>
                 )}
 
-                {/* Sí/No */}
                 {q.question_type === 'yes_no' && (
                   <div className="flex gap-3 ml-5">
                     {['Sí', 'No'].map(v => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setAnswer(q.id, v)}
+                      <button key={v} type="button" onClick={() => setAnswer(q.id, v)}
                         className={`px-8 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                          answers[q.id] === v
-                            ? 'bg-violet-600 text-white border-violet-600'
-                            : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
-                        }`}
-                      >
+                          answers[q.id] === v ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
+                        }`}>
                         {v}
                       </button>
                     ))}
@@ -359,17 +297,12 @@ export default function SurveyFormPage() {
             ))}
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>
             )}
 
             <div className="pt-2 border-t border-gray-100">
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-60 shadow-sm"
-              >
+              <button type="submit" disabled={submitting}
+                className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-60 shadow-sm">
                 {submitting ? 'Enviando...' : 'Enviar respuestas'}
               </button>
               <p className="text-center text-xs text-gray-400 mt-3">Tus respuestas son anónimas y confidenciales</p>

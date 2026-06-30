@@ -1,67 +1,65 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { isDemoMode } from '../lib/demo'
-import { mockSurveys, mockSurveyQuestions, mockSurveyAnswers } from '../lib/mockData'
+import { sql } from '../lib/db'
+import * as XLSX from 'xlsx'
 import type { Survey, SurveyQuestion, SurveyResponse } from '../lib/database.types'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import { SURVEY_QUESTION_TEMPLATES } from '../lib/constants'
-import { Plus, Send, BarChart2, ChevronRight, Copy, CheckCircle } from 'lucide-react'
+import { Plus, Send, BarChart2, Copy, CheckCircle, Download, ChevronDown, ChevronRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Tooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
 
-const STATUS_LABELS = { draft: 'Borrador', active: 'Activa', closed: 'Cerrada' }
-const STATUS_COLORS = { draft: 'bg-gray-100 text-gray-600', active: 'bg-green-100 text-green-700', closed: 'bg-blue-100 text-blue-700' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Borrador', active: 'Activa', closed: 'Cerrada' }
+const STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-gray-800 text-gray-400',
+  active: 'bg-green-900/50 text-green-400',
+  closed: 'bg-blue-900/50 text-blue-400',
+}
 
 export default function SurveysPage() {
   const [surveys, setSurveys] = useState<Survey[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Survey | null>(null)
-  const [view, setView] = useState<'list' | 'results'>('list')
 
   const fetchSurveys = async () => {
     setLoading(true)
-    if (isDemoMode()) {
-      setSurveys(mockSurveys)
-      setLoading(false)
-      return
-    }
-    const { data } = await supabase.from('surveys').select('*').order('created_at', { ascending: false })
-    setSurveys((data ?? []) as Survey[])
+    const data = await sql`SELECT * FROM surveys ORDER BY created_at DESC`
+    setSurveys(data as Survey[])
     setLoading(false)
   }
 
   useEffect(() => { fetchSurveys() }, [])
 
   const createSurvey = async (title: string, description: string) => {
-    const { data: surveyRaw } = await supabase
-      .from('surveys')
-      .insert([{ title, description, year: new Date().getFullYear(), status: 'draft' }] as Record<string, unknown>[])
-      .select()
-      .single()
-
-    const survey = surveyRaw as Survey | null
+    const [survey] = await sql`
+      INSERT INTO surveys (title, description, year, status)
+      VALUES (${title}, ${description || null}, ${new Date().getFullYear()}, 'draft')
+      RETURNING *
+    `
     if (survey) {
-      await supabase.from('survey_questions').insert(
-        SURVEY_QUESTION_TEMPLATES.map(q => ({ ...q, survey_id: survey.id })) as Record<string, unknown>[]
-      )
+      for (const q of SURVEY_QUESTION_TEMPLATES) {
+        await sql`
+          INSERT INTO survey_questions (survey_id, question_text, question_type, category, order_index, is_required, description, options)
+          VALUES (${(survey as Survey).id}, ${q.question_text}, ${q.question_type}, ${q.category ?? null}, ${q.order_index}, ${q.is_required ?? true}, ${q.description ?? null}, ${(q as Record<string,unknown>).options as string ?? null})
+        `
+      }
     }
     await fetchSurveys()
     setCreating(false)
   }
 
   const activateSurvey = async (id: string) => {
-    await supabase.from('surveys').update({ status: 'active' } as Record<string, unknown>).eq('id', id)
+    await sql`UPDATE surveys SET status = 'active' WHERE id = ${id}`
     await fetchSurveys()
   }
 
   const closeSurvey = async (id: string) => {
-    await supabase.from('surveys').update({ status: 'closed' } as Record<string, unknown>).eq('id', id)
+    await sql`UPDATE surveys SET status = 'closed' WHERE id = ${id}`
     await fetchSurveys()
   }
 
@@ -69,67 +67,57 @@ export default function SurveysPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Encuestas de Satisfacción</h1>
+          <h1 className="text-2xl font-bold text-white">Encuestas de Satisfacción</h1>
           <p className="text-gray-500 text-sm mt-1">Gestiona y analiza las encuestas del equipo</p>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors"
-        >
-          <Plus size={16} />
-          Nueva encuesta
+        <button onClick={() => setCreating(true)}
+          className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors">
+          <Plus size={16} /> Nueva encuesta
         </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-gray-400">Cargando...</div>
+        <div className="text-center py-16 text-gray-500">Cargando...</div>
       ) : surveys.length === 0 ? (
         <div className="text-center py-16">
-          <BarChart2 size={40} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-400">No hay encuestas todavía</p>
+          <BarChart2 size={40} className="mx-auto text-gray-700 mb-3" />
+          <p className="text-gray-500">No hay encuestas todavía</p>
         </div>
       ) : (
         <div className="space-y-3">
           {surveys.map(survey => (
-            <div key={survey.id} className="bg-white rounded-xl border border-gray-200 p-5">
+            <div key={survey.id} className="bg-[#1a1a2e] rounded-xl border border-[#2a2a4a] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge label={STATUS_LABELS[survey.status]} className={STATUS_COLORS[survey.status]} />
-                    <span className="text-xs text-gray-400">{survey.year}</span>
+                    <span className="text-xs text-gray-600">{survey.year}</span>
                   </div>
-                  <h3 className="font-semibold text-gray-900">{survey.title}</h3>
+                  <h3 className="font-semibold text-gray-100">{survey.title}</h3>
                   {survey.description && <p className="text-sm text-gray-500 mt-0.5">{survey.description}</p>}
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-600 mt-1">
                     Creada el {format(new Date(survey.created_at), 'dd MMM yyyy', { locale: es })}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-end">
                   {survey.status === 'draft' && (
-                    <button
-                      onClick={() => activateSurvey(survey.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm hover:bg-green-100"
-                    >
+                    <button onClick={() => activateSurvey(survey.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-900/30 text-green-400 border border-green-500/30 rounded-lg text-sm hover:bg-green-900/50">
                       <Send size={13} /> Activar
                     </button>
                   )}
                   {survey.status === 'active' && (
                     <>
-                      <SurveyLinkButton surveyId={survey.id} />
-                      <button
-                        onClick={() => closeSurvey(survey.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm hover:bg-blue-100"
-                      >
+                      <PublicLinkButton survey={survey} />
+                      <button onClick={() => closeSurvey(survey.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 text-blue-400 border border-blue-500/30 rounded-lg text-sm hover:bg-blue-900/50">
                         Cerrar
                       </button>
                     </>
                   )}
-                  <button
-                    onClick={() => { setSelected(survey); setView('results') }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded-lg text-sm hover:bg-gray-100"
-                  >
-                    <BarChart2 size={13} /> Resultados
-                    <ChevronRight size={13} />
+                  <button onClick={() => setSelected(survey)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2a2a4a] text-gray-400 border border-[#3a3a5a] rounded-lg text-sm hover:text-white hover:bg-[#3a3a5a]">
+                    <BarChart2 size={13} /> Ver encuesta
                   </button>
                 </div>
               </div>
@@ -138,36 +126,410 @@ export default function SurveysPage() {
         </div>
       )}
 
-      {creating && (
-        <CreateSurveyModal onClose={() => setCreating(false)} onCreate={createSurvey} />
-      )}
-
-      {selected && view === 'results' && (
-        <SurveyResultsModal survey={selected} onClose={() => setSelected(null)} />
-      )}
+      {creating && <CreateSurveyModal onClose={() => setCreating(false)} onCreate={createSurvey} />}
+      {selected && <SurveyModal survey={selected} onClose={() => setSelected(null)} onRefresh={fetchSurveys} />}
     </div>
   )
 }
 
-function SurveyLinkButton({ surveyId }: { surveyId: string }) {
+function PublicLinkButton({ survey }: { survey: Survey }) {
   const [copied, setCopied] = useState(false)
-  const url = `${window.location.origin}/encuesta/${surveyId}`
-
+  const url = `${window.location.origin}/encuesta/${survey.id}`
   const handleCopy = () => {
     navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
   return (
-    <button
-      onClick={handleCopy}
-      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-sm hover:bg-violet-100"
-    >
+    <button onClick={handleCopy}
+      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-900/30 text-violet-400 border border-violet-500/30 rounded-lg text-sm hover:bg-violet-900/50">
       {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
       {copied ? 'Copiado' : 'Copiar link'}
     </button>
   )
+}
+
+function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: () => void; onRefresh: () => void }) {
+  const [tab, setTab] = useState<'preguntas' | 'textos' | 'enviar' | 'resultados'>('preguntas')
+  const [questions, setQuestions] = useState<SurveyQuestion[]>([])
+  const [responses, setResponses] = useState<SurveyResponse[]>([])
+  const [welcomeText, setWelcomeText] = useState(survey.welcome_text ?? '')
+  const [closingText, setClosingText] = useState(survey.closing_text ?? '')
+  const [savingTexts, setSavingTexts] = useState(false)
+  const [loadingResults, setLoadingResults] = useState(false)
+  const [radarData, setRadarData] = useState<{ category: string; avg: number }[]>([])
+  const [barData, setBarData] = useState<{ name: string; avg: number; full: string }[]>([])
+  const [textAnswers, setTextAnswers] = useState<{ question: string; answers: string[] }[]>([])
+  const [openResponses, setOpenResponses] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    const load = async () => {
+      const qs = await sql`SELECT * FROM survey_questions WHERE survey_id = ${survey.id} ORDER BY order_index`
+      setQuestions(qs as SurveyQuestion[])
+    }
+    load()
+  }, [survey.id])
+
+  useEffect(() => {
+    if (tab !== 'resultados') return
+    const loadResults = async () => {
+      setLoadingResults(true)
+      const qs = await sql`SELECT * FROM survey_questions WHERE survey_id = ${survey.id} ORDER BY order_index`
+      const rs = await sql`
+        SELECT sr.*, json_agg(sa.*) AS survey_answers
+        FROM survey_responses sr
+        LEFT JOIN survey_answers sa ON sa.response_id = sr.id
+        WHERE sr.survey_id = ${survey.id} AND sr.submitted_at IS NOT NULL
+        GROUP BY sr.id
+        ORDER BY sr.submitted_at DESC
+      `
+      setQuestions(qs as SurveyQuestion[])
+      setResponses(rs as SurveyResponse[])
+
+      const qsList = qs as SurveyQuestion[]
+      const rsList = rs as Array<Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }>
+
+      const catMap: Record<string, number[]> = {}
+      for (const q of qsList.filter(q => q.question_type === 'scale')) {
+        if (!catMap[q.category]) catMap[q.category] = []
+        for (const r of rsList) {
+          const ans = (r.survey_answers ?? []).find((a) => a.question_id === q.id)
+          if (ans?.answer_scale) catMap[q.category].push(ans.answer_scale as number)
+        }
+      }
+      setRadarData(Object.entries(catMap).map(([category, vals]) => ({
+        category,
+        avg: vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0,
+      })))
+
+      setBarData(qsList.filter(q => q.question_type === 'scale').map(q => {
+        const vals: number[] = []
+        for (const r of rsList) {
+          const ans = (r.survey_answers ?? []).find((a) => a.question_id === q.id)
+          if (ans?.answer_scale) vals.push(ans.answer_scale as number)
+        }
+        return {
+          name: q.question_text.length > 40 ? q.question_text.slice(0, 37) + '…' : q.question_text,
+          full: q.question_text,
+          avg: vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0,
+        }
+      }))
+
+      const textQs = qsList.filter(q => q.question_type === 'text')
+      setTextAnswers(textQs.map(q => ({
+        question: q.question_text,
+        answers: rsList.flatMap(r =>
+          (r.survey_answers ?? []).filter(a => a.question_id === q.id && a.answer_text).map(a => a.answer_text as string)
+        ),
+      })))
+
+      setLoadingResults(false)
+    }
+    loadResults()
+  }, [tab, survey.id])
+
+  const saveTexts = async () => {
+    setSavingTexts(true)
+    await sql`UPDATE surveys SET welcome_text = ${welcomeText || null}, closing_text = ${closingText || null} WHERE id = ${survey.id}`
+    onRefresh()
+    setSavingTexts(false)
+  }
+
+  const downloadExcel = () => {
+    const rsList = responses as Array<Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }>
+    const rows = rsList.map((r, i) => {
+      const row: Record<string, unknown> = {
+        '#': i + 1,
+        'Fecha': r.submitted_at ? format(new Date(r.submitted_at as string), 'dd/MM/yyyy HH:mm') : '',
+        'Anónimo': r.is_anonymous ? 'Sí' : 'No',
+      }
+      for (const q of questions) {
+        const ans = (r.survey_answers ?? []).find(a => a.question_id === q.id)
+        row[q.question_text] = ans?.answer_scale ?? ans?.answer_text ?? ''
+      }
+      return row
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Respuestas')
+    XLSX.writeFile(wb, `${survey.title.replace(/\s+/g, '_')}_resultados.xlsx`)
+  }
+
+  const tabs = [
+    { key: 'preguntas', label: 'Preguntas' },
+    { key: 'textos', label: 'Bienvenida · Cierre' },
+    { key: 'enviar', label: 'Enviar' },
+    { key: 'resultados', label: 'Resultados' },
+  ] as const
+
+  const tooltipStyle = { background: '#1a1a2e', border: '1px solid #2a2a4a', borderRadius: 8, color: '#fff', fontSize: 12 }
+
+  return (
+    <Modal open onClose={onClose} title={survey.title} size="xl">
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 bg-[#0f0f1a] rounded-lg p-1">
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors ${
+              tab === t.key ? 'bg-violet-600 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Preguntas */}
+      {tab === 'preguntas' && (
+        <div className="space-y-2">
+          {questions.length === 0 ? (
+            <p className="text-gray-500 text-sm text-center py-8">No hay preguntas</p>
+          ) : (
+            questions.map((q, i) => (
+              <div key={q.id} className="bg-[#0f0f1a] rounded-lg border border-[#2a2a4a] p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-xs text-gray-600 font-mono mt-0.5 w-5 flex-shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-200">{q.question_text}</p>
+                    {q.description && <p className="text-xs text-gray-500 mt-0.5">{q.description}</p>}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      {q.category && <span className="text-xs bg-violet-900/30 text-violet-400 px-2 py-0.5 rounded">{q.category}</span>}
+                      <span className="text-xs bg-[#2a2a4a] text-gray-400 px-2 py-0.5 rounded">{q.question_type}</span>
+                      {q.is_required && <span className="text-xs text-red-400">Obligatoria</span>}
+                    </div>
+                    <QuestionOptions q={q} />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Tab: Bienvenida · Cierre */}
+      {tab === 'textos' && (
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">Texto de bienvenida</label>
+            <textarea value={welcomeText} onChange={e => setWelcomeText(e.target.value)} rows={6}
+              placeholder="Texto que verá el participante antes de empezar..."
+              className="w-full bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">Texto de cierre</label>
+            <textarea value={closingText} onChange={e => setClosingText(e.target.value)} rows={4}
+              placeholder="Mensaje de agradecimiento al enviar..."
+              className="w-full bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
+          </div>
+          <div className="flex justify-end">
+            <button onClick={saveTexts} disabled={savingTexts}
+              className="px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-60">
+              {savingTexts ? 'Guardando...' : 'Guardar textos'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Enviar */}
+      {tab === 'enviar' && (
+        <div className="space-y-5">
+          <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-5">
+            <p className="text-sm font-medium text-gray-300 mb-1">Link público de la encuesta</p>
+            <p className="text-xs text-gray-500 mb-3">Comparte este enlace para que cualquier persona pueda responder</p>
+            <div className="flex gap-2">
+              <input readOnly value={`${window.location.origin}/encuesta/${survey.id}`}
+                className="flex-1 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg px-3 py-2 text-sm text-gray-400 font-mono" />
+              <PublicLinkButton survey={survey} />
+            </div>
+          </div>
+
+          {survey.status === 'draft' && (
+            <div className="bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4 text-sm text-yellow-400">
+              La encuesta está en borrador. Actívala para que el link funcione.
+            </div>
+          )}
+
+          <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-5">
+            <p className="text-sm font-medium text-gray-300 mb-1">Tokens individuales</p>
+            <p className="text-xs text-gray-500">
+              Para enviar a personas concretas, crea tokens individuales en la base de datos (survey_responses) con is_anonymous = false.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Resultados */}
+      {tab === 'resultados' && (
+        loadingResults ? (
+          <div className="text-center py-12 text-gray-500">Cargando resultados...</div>
+        ) : responses.length === 0 ? (
+          <div className="text-center py-12">
+            <BarChart2 size={36} className="mx-auto text-gray-700 mb-3" />
+            <p className="text-gray-500">Todavía no hay respuestas enviadas.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* KPIs */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-violet-900/40 to-violet-800/20 border border-violet-500/20 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-violet-300">{responses.length}</div>
+                <div className="text-xs text-violet-400 mt-1">Respuestas</div>
+              </div>
+              <div className="bg-gradient-to-br from-cyan-900/40 to-cyan-800/20 border border-cyan-500/20 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-cyan-300">
+                  {radarData.length > 0 ? (radarData.reduce((a, b) => a + b.avg, 0) / radarData.length).toFixed(1) : '—'}
+                </div>
+                <div className="text-xs text-cyan-400 mt-1">Media general /5</div>
+              </div>
+              <div className="bg-gradient-to-br from-green-900/40 to-green-800/20 border border-green-500/20 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-green-300">{questions.length}</div>
+                <div className="text-xs text-green-400 mt-1">Preguntas</div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={downloadExcel}
+                className="flex items-center gap-2 px-4 py-2 bg-green-900/30 text-green-400 border border-green-500/30 rounded-lg text-sm hover:bg-green-900/50">
+                <Download size={14} /> Descargar Excel
+              </button>
+            </div>
+
+            {radarData.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">Media por categoría</h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#2a2a4a" />
+                    <PolarAngleAxis dataKey="category" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                    <PolarRadiusAxis domain={[0, 5]} tick={{ fontSize: 10, fill: '#6b7280' }} />
+                    <Radar name="Media" dataKey="avg" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.25} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${Number(v)}/5`]} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {barData.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">Media por pregunta</h3>
+                <ResponsiveContainer width="100%" height={barData.length * 36 + 40}>
+                  <BarChart data={barData} layout="vertical" margin={{ left: 8, right: 24 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#2a2a4a" />
+                    <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                    <YAxis type="category" dataKey="name" width={220} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [Number(v).toFixed(1) + '/5']} />
+                    <Bar dataKey="avg" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Media" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {textAnswers.filter(t => t.answers.length > 0).map(({ question, answers }) => (
+              <div key={question}>
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">{question}</h3>
+                <div className="space-y-2">
+                  {answers.map((ans, i) => (
+                    <div key={i} className="bg-[#0f0f1a] rounded-lg px-4 py-2.5 text-sm text-gray-400 border border-[#2a2a4a]">
+                      "{ans}"
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* Respuestas individuales */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-400 mb-3">Respuestas individuales</h3>
+              <div className="space-y-2">
+                {(responses as Array<Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }>).map((r, i) => (
+                  <div key={r.id as string} className="bg-[#0f0f1a] rounded-xl border border-[#2a2a4a] overflow-hidden">
+                    <button
+                      onClick={() => setOpenResponses(prev => ({ ...prev, [r.id as string]: !prev[r.id as string] }))}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#1a1a2e]">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-600 font-mono">#{i + 1}</span>
+                        <span className="text-xs text-gray-500">
+                          {r.submitted_at ? format(new Date(r.submitted_at as string), 'dd MMM yyyy HH:mm', { locale: es }) : ''}
+                        </span>
+                        {r.is_anonymous && <span className="text-xs bg-[#2a2a4a] text-gray-500 px-2 py-0.5 rounded">Anónimo</span>}
+                      </div>
+                      {openResponses[r.id as string] ? <ChevronDown size={14} className="text-gray-600" /> : <ChevronRight size={14} className="text-gray-600" />}
+                    </button>
+                    {openResponses[r.id as string] && (
+                      <div className="px-4 pb-4 space-y-2 border-t border-[#2a2a4a]">
+                        {questions.map(q => {
+                          const ans = (r.survey_answers ?? []).find(a => a.question_id === q.id)
+                          return (
+                            <div key={q.id} className="flex gap-3 py-1.5">
+                              <span className="text-xs text-gray-600 flex-shrink-0 w-4">{q.order_index}.</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-gray-500">{q.question_text}</p>
+                                <p className="text-sm text-gray-200 mt-0.5">
+                                  {ans?.answer_scale != null ? `${ans.answer_scale}/5` : ans?.answer_text ?? <span className="text-gray-600 italic">Sin respuesta</span>}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      )}
+    </Modal>
+  )
+}
+
+function QuestionOptions({ q }: { q: SurveyQuestion }) {
+  if (q.question_type === 'scale') {
+    return (
+      <div className="flex gap-1 mt-2">
+        {[1, 2, 3, 4, 5].map(v => (
+          <div key={v} className="w-8 h-8 rounded-lg bg-[#2a2a4a] border border-[#3a3a5a] flex items-center justify-center text-xs text-gray-400">{v}</div>
+        ))}
+        <span className="self-center text-xs text-gray-600 ml-1">Escala 1-5</span>
+      </div>
+    )
+  }
+  if (q.question_type === 'scale_10') {
+    return (
+      <div className="flex gap-1 mt-2 flex-wrap">
+        {[1,2,3,4,5,6,7,8,9,10].map(v => (
+          <div key={v} className="w-7 h-7 rounded bg-[#2a2a4a] border border-[#3a3a5a] flex items-center justify-center text-xs text-gray-400">{v}</div>
+        ))}
+        <span className="self-center text-xs text-gray-600 ml-1">Escala 1-10</span>
+      </div>
+    )
+  }
+  if (q.question_type === 'yes_no') {
+    return (
+      <div className="flex gap-2 mt-2">
+        {['Sí', 'No'].map(v => (
+          <div key={v} className="px-4 py-1 rounded-lg bg-[#2a2a4a] border border-[#3a3a5a] text-xs text-gray-400">{v}</div>
+        ))}
+      </div>
+    )
+  }
+  if ((q.question_type === 'multi_select' || q.question_type === 'custom_select') && q.options) {
+    const opts = q.options.split('\n').filter(Boolean)
+    return (
+      <div className="mt-2 space-y-1">
+        {opts.map(opt => (
+          <div key={opt} className="flex items-center gap-2 text-xs text-gray-500">
+            <div className={`w-3 h-3 rounded${q.question_type === 'multi_select' ? '' : '-full'} bg-[#2a2a4a] border border-[#3a3a5a]`} />
+            {opt}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (q.question_type === 'text') {
+    return <div className="mt-2 bg-[#2a2a4a] rounded-lg px-3 py-2 text-xs text-gray-600">Respuesta libre de texto</div>
+  }
+  return null
 }
 
 function CreateSurveyModal({ onClose, onCreate }: { onClose: () => void; onCreate: (title: string, description: string) => Promise<void> }) {
@@ -186,192 +548,25 @@ function CreateSurveyModal({ onClose, onCreate }: { onClose: () => void; onCreat
     <Modal open onClose={onClose} title="Nueva encuesta" size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            required
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-          />
+          <label className="block text-sm font-medium text-gray-400 mb-1">Título *</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} required
+            className="w-full bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Descripción (opcional)</label>
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
-          />
+          <label className="block text-sm font-medium text-gray-400 mb-1">Descripción (opcional)</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+            className="w-full bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
         </div>
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-          Se crearán automáticamente 9 preguntas estándar alineadas con los criterios B Corp (Satisfacción, Bienestar, Pertenencia, Compromiso, Seguridad psicológica, JEDI).
+        <p className="text-xs text-gray-600 bg-[#0f0f1a] rounded-lg p-3 border border-[#2a2a4a]">
+          Se crearán automáticamente las preguntas estándar alineadas con los criterios B Corp.
         </p>
         <div className="flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancelar</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-300">Cancelar</button>
           <button type="submit" disabled={loading} className="px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-60">
             {loading ? 'Creando...' : 'Crear encuesta'}
           </button>
         </div>
       </form>
-    </Modal>
-  )
-}
-
-function SurveyResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void }) {
-  const [questions, setQuestions] = useState<SurveyQuestion[]>([])
-  const [responses, setResponses] = useState<SurveyResponse[]>([])
-  const [radarData, setRadarData] = useState<{ category: string; avg: number }[]>([])
-  const [barData, setBarData] = useState<{ name: string; avg: number; full: string }[]>([])
-  const [textAnswers, setTextAnswers] = useState<{ question: string; answers: string[] }[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const load = async () => {
-      if (isDemoMode()) {
-        const mockData = mockSurveyAnswers[survey.id as keyof typeof mockSurveyAnswers]
-        setQuestions(mockSurveyQuestions.filter(q => q.survey_id === survey.id))
-        setResponses([])
-        if (mockData) {
-          setRadarData(mockData.radarData)
-          setBarData(mockData.barData)
-          setTextAnswers(mockData.textAnswers)
-        }
-        setLoading(false)
-        return
-      }
-
-      const [{ data: qsRaw }, { data: rsRaw }] = await Promise.all([
-        supabase.from('survey_questions').select('*').eq('survey_id', survey.id).order('order_index'),
-        supabase.from('survey_responses').select('*, survey_answers(*)').eq('survey_id', survey.id).not('submitted_at', 'is', null),
-      ])
-
-      const qs = (qsRaw ?? []) as SurveyQuestion[]
-      const rs = (rsRaw ?? []) as any[]
-
-      setQuestions(qs)
-      setResponses(rs as SurveyResponse[])
-
-      if (qs.length === 0) { setLoading(false); return }
-
-      // Radar by category
-      const catMap: Record<string, number[]> = {}
-      for (const q of qs.filter((q: SurveyQuestion) => q.question_type === 'scale')) {
-        if (!catMap[q.category]) catMap[q.category] = []
-        for (const r of rs as any[]) {
-          const ans = r.survey_answers?.find((a: any) => a.question_id === q.id)
-          if (ans?.answer_scale) catMap[q.category].push(ans.answer_scale)
-        }
-      }
-      setRadarData(Object.entries(catMap).map(([category, vals]) => ({
-        category,
-        avg: vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0,
-      })))
-
-      // Bar per question
-      const bar = qs.filter((q: SurveyQuestion) => q.question_type === 'scale').map((q: SurveyQuestion) => {
-        const vals: number[] = []
-        for (const r of rs as any[]) {
-          const ans = r.survey_answers?.find((a: any) => a.question_id === q.id)
-          if (ans?.answer_scale) vals.push(ans.answer_scale)
-        }
-        return {
-          name: q.question_text.length > 40 ? q.question_text.slice(0, 37) + '…' : q.question_text,
-          full: q.question_text,
-          avg: vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0,
-        }
-      })
-      setBarData(bar)
-
-      // Text answers
-      const textQs = qs.filter((q: SurveyQuestion) => q.question_type === 'text')
-      const textResults = textQs.map(q => ({
-        question: q.question_text,
-        answers: (rs as any[]).flatMap(r =>
-          (r.survey_answers ?? []).filter((a: any) => a.question_id === q.id && a.answer_text).map((a: any) => a.answer_text)
-        ),
-      }))
-      setTextAnswers(textResults)
-
-      setLoading(false)
-    }
-    load()
-  }, [survey.id])
-
-  const mockData = isDemoMode() ? mockSurveyAnswers[survey.id as keyof typeof mockSurveyAnswers] : null
-  const total = mockData ? mockData.totalResponses : responses.length
-
-  return (
-    <Modal open onClose={onClose} title={`Resultados — ${survey.title}`} size="xl">
-      {loading ? (
-        <div className="text-center py-8 text-gray-400">Cargando resultados...</div>
-      ) : total === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-400">Todavía no hay respuestas enviadas.</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-violet-50 rounded-xl p-4 text-center">
-              <div className="text-3xl font-bold text-violet-700">{total}</div>
-              <div className="text-sm text-violet-600 mt-1">Respuestas recibidas</div>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-4 text-center">
-              <div className="text-3xl font-bold text-blue-700">
-                {radarData.length > 0 ? (radarData.reduce((a, b) => a + b.avg, 0) / radarData.length).toFixed(1) : '—'}
-              </div>
-              <div className="text-sm text-blue-600 mt-1">Media general (sobre 5)</div>
-            </div>
-            <div className="bg-green-50 rounded-xl p-4 text-center">
-              <div className="text-3xl font-bold text-green-700">{questions.length}</div>
-              <div className="text-sm text-green-600 mt-1">Preguntas</div>
-            </div>
-          </div>
-
-          {radarData.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Media por categoría</h3>
-              <ResponsiveContainer width="100%" height={260}>
-                <RadarChart data={radarData}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="category" tick={{ fontSize: 11 }} />
-                  <PolarRadiusAxis domain={[0, 5]} tick={{ fontSize: 10 }} />
-                  <Radar name="Media" dataKey="avg" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.25} />
-                  <Tooltip formatter={(v) => [`${Number(v)}/5`]} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {barData.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Media por pregunta</h3>
-              <ResponsiveContainer width="100%" height={barData.length * 36 + 40}>
-                <BarChart data={barData} layout="vertical" margin={{ left: 8, right: 24 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" width={220} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v, _name, props: any) => [Number(v).toFixed(1) + '/5', props?.payload?.full ?? '']} />
-                  <Legend />
-                  <Bar dataKey="avg" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Media" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {textAnswers.filter(t => t.answers.length > 0).map(({ question, answers }) => (
-            <div key={question}>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">{question}</h3>
-              <div className="space-y-2">
-                {answers.map((ans, i) => (
-                  <div key={i} className="bg-gray-50 rounded-lg px-4 py-2.5 text-sm text-gray-700">
-                    "{ans}"
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </Modal>
   )
 }
