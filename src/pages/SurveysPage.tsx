@@ -5,7 +5,7 @@ import type { Survey, SurveyQuestion, SurveyResponse } from '../lib/database.typ
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import { SURVEY_QUESTION_TEMPLATES } from '../lib/constants'
-import { Plus, Send, BarChart2, Copy, CheckCircle, Download, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Send, BarChart2, Copy, CheckCircle, Download, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -149,6 +149,15 @@ function PublicLinkButton({ survey }: { survey: Survey }) {
   )
 }
 
+const QUESTION_TYPES: { value: string; label: string }[] = [
+  { value: 'scale', label: 'Escala 1-5' },
+  { value: 'scale_10', label: 'Escala 1-10 (eNPS)' },
+  { value: 'text', label: 'Texto libre' },
+  { value: 'yes_no', label: 'Sí / No' },
+  { value: 'multi_select', label: 'Selección múltiple' },
+  { value: 'custom_select', label: 'Selección única' },
+]
+
 function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: () => void; onRefresh: () => void }) {
   const [tab, setTab] = useState<'preguntas' | 'textos' | 'enviar' | 'resultados'>('preguntas')
   const [questions, setQuestions] = useState<SurveyQuestion[]>([])
@@ -156,19 +165,51 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
   const [welcomeText, setWelcomeText] = useState(survey.welcome_text ?? '')
   const [closingText, setClosingText] = useState(survey.closing_text ?? '')
   const [savingTexts, setSavingTexts] = useState(false)
+  const [textsSaved, setTextsSaved] = useState(false)
+  const [editingQ, setEditingQ] = useState<SurveyQuestion | null>(null)
+  const [addingQ, setAddingQ] = useState(false)
   const [loadingResults, setLoadingResults] = useState(false)
   const [radarData, setRadarData] = useState<{ category: string; avg: number }[]>([])
   const [barData, setBarData] = useState<{ name: string; avg: number; full: string }[]>([])
   const [textAnswers, setTextAnswers] = useState<{ question: string; answers: string[] }[]>([])
   const [openResponses, setOpenResponses] = useState<Record<string, boolean>>({})
 
-  useEffect(() => {
-    const load = async () => {
-      const qs = await sql`SELECT * FROM survey_questions WHERE survey_id = ${survey.id} ORDER BY order_index`
-      setQuestions(qs as SurveyQuestion[])
+  const loadQuestions = async () => {
+    const qs = await sql`SELECT * FROM survey_questions WHERE survey_id = ${survey.id} ORDER BY order_index`
+    setQuestions(qs as SurveyQuestion[])
+  }
+
+  useEffect(() => { loadQuestions() }, [survey.id])
+
+  const deleteQuestion = async (id: string) => {
+    if (!confirm('¿Eliminar esta pregunta?')) return
+    await sql`DELETE FROM survey_questions WHERE id = ${id}`
+    await loadQuestions()
+  }
+
+  const saveQuestion = async (data: Partial<SurveyQuestion> & { id?: string }) => {
+    if (data.id) {
+      await sql`
+        UPDATE survey_questions SET
+          question_text = ${data.question_text ?? ''},
+          question_type = ${data.question_type ?? 'scale'},
+          category = ${data.category ?? null},
+          description = ${data.description ?? null},
+          options = ${data.options ?? null},
+          is_required = ${data.is_required ?? true}
+        WHERE id = ${data.id}
+      `
+    } else {
+      const maxIdx = questions.length > 0 ? Math.max(...questions.map(q => q.order_index)) : 0
+      await sql`
+        INSERT INTO survey_questions (survey_id, question_text, question_type, category, description, options, is_required, order_index)
+        VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.description ?? null}, ${data.options ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
+      `
     }
-    load()
-  }, [survey.id])
+    await loadQuestions()
+    setEditingQ(null)
+    setAddingQ(false)
+  }
 
   useEffect(() => {
     if (tab !== 'resultados') return
@@ -230,8 +271,15 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
 
   const saveTexts = async () => {
     setSavingTexts(true)
-    await sql`UPDATE surveys SET welcome_text = ${welcomeText || null}, closing_text = ${closingText || null} WHERE id = ${survey.id}`
-    onRefresh()
+    setTextsSaved(false)
+    try {
+      await sql`UPDATE surveys SET welcome_text = ${welcomeText || null}, closing_text = ${closingText || null} WHERE id = ${survey.id}`
+      setTextsSaved(true)
+      onRefresh()
+      setTimeout(() => setTextsSaved(false), 3000)
+    } catch (e) {
+      console.error('Error saving texts:', e)
+    }
     setSavingTexts(false)
   }
 
@@ -282,10 +330,13 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
       {/* Tab: Preguntas */}
       {tab === 'preguntas' && (
         <div className="space-y-2">
-          {questions.length === 0 ? (
+          {questions.length === 0 && !addingQ && (
             <p className="text-gray-500 text-sm text-center py-8">No hay preguntas</p>
-          ) : (
-            questions.map((q, i) => (
+          )}
+          {questions.map((q, i) => (
+            editingQ?.id === q.id ? (
+              <QuestionEditor key={q.id} initial={q} onSave={saveQuestion} onCancel={() => setEditingQ(null)} />
+            ) : (
               <div key={q.id} className="bg-[#0f0f1a] rounded-lg border border-[#2a2a4a] p-4">
                 <div className="flex items-start gap-3">
                   <span className="text-xs text-gray-600 font-mono mt-0.5 w-5 flex-shrink-0">{i + 1}</span>
@@ -294,14 +345,33 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
                     {q.description && <p className="text-xs text-gray-500 mt-0.5">{q.description}</p>}
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {q.category && <span className="text-xs bg-violet-900/30 text-violet-400 px-2 py-0.5 rounded">{q.category}</span>}
-                      <span className="text-xs bg-[#2a2a4a] text-gray-400 px-2 py-0.5 rounded">{q.question_type}</span>
+                      <span className="text-xs bg-[#2a2a4a] text-gray-400 px-2 py-0.5 rounded">{QUESTION_TYPES.find(t => t.value === q.question_type)?.label ?? q.question_type}</span>
                       {q.is_required && <span className="text-xs text-red-400">Obligatoria</span>}
                     </div>
                     <QuestionOptions q={q} />
                   </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => setEditingQ(q)}
+                      className="p-1.5 text-gray-600 hover:text-violet-400 hover:bg-violet-900/20 rounded-lg transition-colors">
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => deleteQuestion(q.id)}
+                      className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))
+            )
+          ))}
+          {addingQ && (
+            <QuestionEditor onSave={saveQuestion} onCancel={() => setAddingQ(false)} />
+          )}
+          {!addingQ && !editingQ && (
+            <button onClick={() => setAddingQ(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-[#3a3a5a] rounded-lg text-sm text-gray-500 hover:text-violet-400 hover:border-violet-500/50 transition-colors mt-2">
+              <Plus size={14} /> Añadir pregunta
+            </button>
           )}
         </div>
       )}
@@ -321,7 +391,8 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
               placeholder="Mensaje de agradecimiento al enviar..."
               className="w-full bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-3">
+            {textsSaved && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={13} /> Guardado</span>}
             <button onClick={saveTexts} disabled={savingTexts}
               className="px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-60">
               {savingTexts ? 'Guardando...' : 'Guardar textos'}
@@ -531,6 +602,92 @@ function QuestionOptions({ q }: { q: SurveyQuestion }) {
     return <div className="mt-2 bg-[#2a2a4a] rounded-lg px-3 py-2 text-xs text-gray-600">Respuesta libre de texto</div>
   }
   return null
+}
+
+function QuestionEditor({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: SurveyQuestion
+  onSave: (data: Partial<SurveyQuestion> & { id?: string }) => Promise<void>
+  onCancel: () => void
+}) {
+  const [text, setText] = useState(initial?.question_text ?? '')
+  const [type, setType] = useState<string>(initial?.question_type ?? 'scale')
+  const [category, setCategory] = useState(initial?.category ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
+  const [options, setOptions] = useState(initial?.options ?? '')
+  const [isRequired, setIsRequired] = useState(initial?.is_required ?? true)
+  const [saving, setSaving] = useState(false)
+
+  const needsOptions = type === 'multi_select' || type === 'custom_select'
+
+  const handleSave = async () => {
+    if (!text.trim()) return
+    setSaving(true)
+    await onSave({
+      id: initial?.id,
+      question_text: text.trim(),
+      question_type: type as SurveyQuestion['question_type'],
+      category: category.trim() || null as unknown as string,
+      description: description.trim() || null as unknown as string,
+      options: needsOptions ? options.trim() || null as unknown as string : null as unknown as string,
+      is_required: isRequired,
+    })
+    setSaving(false)
+  }
+
+  const inputCls = "w-full bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+
+  return (
+    <div className="bg-[#0f0f1a] rounded-lg border border-violet-500/50 p-4 space-y-3">
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Texto de la pregunta *</label>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={2}
+          placeholder="Escribe la pregunta..." className={inputCls + ' resize-none'} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
+          <select value={type} onChange={e => setType(e.target.value)} className={inputCls + ' appearance-none'}>
+            {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
+          <input value={category} onChange={e => setCategory(e.target.value)}
+            placeholder="Ej: Satisfacción, JEDI..." className={inputCls} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Descripción (opcional)</label>
+        <input value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="Texto de ayuda que aparece bajo la pregunta..." className={inputCls} />
+      </div>
+      {needsOptions && (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Opciones (una por línea)</label>
+          <textarea value={options} onChange={e => setOptions(e.target.value)} rows={4}
+            placeholder="Opción 1&#10;Opción 2&#10;Opción 3" className={inputCls + ' resize-none font-mono text-xs'} />
+        </div>
+      )}
+      <div className="flex items-center justify-between pt-1">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={isRequired} onChange={e => setIsRequired(e.target.checked)}
+            className="w-3.5 h-3.5 accent-violet-600" />
+          <span className="text-xs text-gray-400">Obligatoria</span>
+        </label>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300">Cancelar</button>
+          <button onClick={handleSave} disabled={saving || !text.trim()}
+            className="px-4 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-medium hover:bg-violet-700 disabled:opacity-60">
+            {saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Añadir pregunta'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function CreateSurveyModal({ onClose, onCreate }: { onClose: () => void; onCreate: (title: string, description: string) => Promise<void> }) {
