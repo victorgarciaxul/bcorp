@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { sql } from '../../lib/db'
+import { supabase } from '../../lib/supabase'
 import type { Survey, SurveyQuestion } from '../../lib/database.types'
 
 export default function SurveyFormPage() {
@@ -20,37 +20,48 @@ export default function SurveyFormPage() {
       if (!token) { setError('Enlace inválido.'); setLoading(false); return }
 
       // Try as individual response token first
-      let responseRow: Record<string, unknown> | undefined
-      const byToken = await sql`SELECT id, survey_id, submitted_at FROM survey_responses WHERE token = ${token} LIMIT 1`
-      if (byToken[0]) {
-        responseRow = byToken[0] as Record<string, unknown>
+      let surveyId: string
+      let respId: string
+      const { data: byToken } = await supabase
+        .from('survey_responses')
+        .select('id, survey_id, submitted_at')
+        .eq('token', token)
+        .limit(1)
+        .single()
+
+      if (byToken) {
+        if (byToken.submitted_at) { setSubmitted(true); setLoading(false); return }
+        respId = byToken.id
+        surveyId = byToken.survey_id
       } else {
         // Try as survey ID (public link) — create a new anonymous response
-        const bySurveyId = await sql`SELECT id, status FROM surveys WHERE id = ${token} LIMIT 1`
-        if (!bySurveyId[0]) { setError('Enlace no encontrado o expirado.'); setLoading(false); return }
-        if ((bySurveyId[0] as Record<string, unknown>).status !== 'active') {
-          setError('Esta encuesta no está activa.'); setLoading(false); return
-        }
-        const [newResp] = await sql`
-          INSERT INTO survey_responses (id, survey_id, token, is_anonymous)
-          VALUES (gen_random_uuid(), ${token}, gen_random_uuid()::text, true)
-          RETURNING id, survey_id, submitted_at
-        `
-        responseRow = newResp as Record<string, unknown>
+        const { data: surveyRow } = await supabase
+          .from('surveys')
+          .select('id, status')
+          .eq('id', token)
+          .single()
+        if (!surveyRow) { setError('Enlace no encontrado o expirado.'); setLoading(false); return }
+        if (surveyRow.status !== 'active') { setError('Esta encuesta no está activa.'); setLoading(false); return }
+
+        const { data: newResp, error: insertErr } = await supabase
+          .from('survey_responses')
+          .insert([{ survey_id: token, is_anonymous: true } as Record<string, unknown>])
+          .select('id, survey_id, submitted_at')
+          .single()
+        if (insertErr || !newResp) { setError('Error al cargar la encuesta.'); setLoading(false); return }
+        respId = newResp.id
+        surveyId = newResp.survey_id
       }
 
-      if (!responseRow) { setError('Error al cargar la encuesta.'); setLoading(false); return }
-      if (responseRow.submitted_at) { setSubmitted(true); setLoading(false); return }
+      setResponseId(respId)
 
-      setResponseId(responseRow.id as string)
-
-      const [surveyData, qs] = await Promise.all([
-        sql`SELECT * FROM surveys WHERE id = ${responseRow.survey_id} LIMIT 1`,
-        sql`SELECT * FROM survey_questions WHERE survey_id = ${responseRow.survey_id} ORDER BY order_index`,
+      const [{ data: surveyData }, { data: qs }] = await Promise.all([
+        supabase.from('surveys').select('*').eq('id', surveyId).single(),
+        supabase.from('survey_questions').select('*').eq('survey_id', surveyId).order('order_index'),
       ])
 
-      setSurvey(surveyData[0] as Survey)
-      setQuestions(qs as SurveyQuestion[])
+      setSurvey(surveyData as Survey)
+      setQuestions((qs ?? []) as SurveyQuestion[])
       setLoading(false)
     }
     load()
@@ -89,28 +100,25 @@ export default function SurveyFormPage() {
     setSubmitting(true)
     setError('')
 
-    for (const q of questions) {
-      const ans = answers[q.id]
-      if (ans === undefined || ans === null) continue
+    const answersToInsert = questions
+      .map(q => {
+        const ans = answers[q.id]
+        if (ans === undefined || ans === null) return null
+        let answerText: string | null = null
+        let answerScale: number | null = null
+        if (q.question_type === 'scale' || q.question_type === 'scale_10') {
+          answerScale = typeof ans === 'number' ? ans : null
+        } else if (q.question_type === 'multi_select') {
+          answerText = Array.isArray(ans) ? ans.join(', ') : String(ans)
+        } else {
+          answerText = String(ans)
+        }
+        return { response_id: responseId, question_id: q.id, answer_text: answerText, answer_scale: answerScale }
+      })
+      .filter(Boolean)
 
-      let answerText: string | null = null
-      let answerScale: number | null = null
-
-      if (q.question_type === 'scale' || q.question_type === 'scale_10') {
-        answerScale = typeof ans === 'number' ? ans : null
-      } else if (q.question_type === 'multi_select') {
-        answerText = Array.isArray(ans) ? ans.join(', ') : String(ans)
-      } else {
-        answerText = String(ans)
-      }
-
-      await sql`
-        INSERT INTO survey_answers (id, response_id, question_id, answer_text, answer_scale)
-        VALUES (gen_random_uuid(), ${responseId}, ${q.id}, ${answerText}, ${answerScale})
-      `
-    }
-
-    await sql`UPDATE survey_responses SET submitted_at = now() WHERE id = ${responseId}`
+    await supabase.from('survey_answers').insert(answersToInsert as Record<string, unknown>[])
+    await supabase.from('survey_responses').update({ submitted_at: new Date().toISOString() } as Record<string, unknown>).eq('id', responseId)
 
     setSubmitted(true)
     setSubmitting(false)
