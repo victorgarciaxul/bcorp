@@ -44,8 +44,8 @@ export default function SurveysPage() {
     if (survey) {
       for (const q of SURVEY_QUESTION_TEMPLATES) {
         await sql`
-          INSERT INTO survey_questions (survey_id, question_text, question_type, category, order_index, is_required, description, options)
-          VALUES (${(survey as Survey).id}, ${q.question_text}, ${q.question_type}, ${q.category ?? null}, ${q.order_index}, ${q.is_required ?? true}, ${q.description ?? null}, ${(q as Record<string,unknown>).options as string ?? null})
+          INSERT INTO survey_questions (survey_id, question_text, question_type, category, order_index, is_required)
+          VALUES (${(survey as Survey).id}, ${q.question_text}, ${q.question_type}, ${q.category ?? null}, ${q.order_index}, true)
         `
       }
     }
@@ -235,8 +235,9 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
     setSavingTexts(false)
   }
 
+  type RespRow = Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }
   const downloadExcel = () => {
-    const rsList = responses as Array<Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }>
+    const rsList = (responses as unknown) as RespRow[]
     const rows = rsList.map((r, i) => {
       const row: Record<string, unknown> = {
         '#': i + 1,
@@ -440,7 +441,7 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-3">Respuestas individuales</h3>
               <div className="space-y-2">
-                {(responses as Array<Record<string, unknown> & { survey_answers: Array<Record<string, unknown>> }>).map((r, i) => (
+                {((responses as unknown) as RespRow[]).map((r, i) => (
                   <div key={r.id as string} className="bg-[#0f0f1a] rounded-xl border border-[#2a2a4a] overflow-hidden">
                     <button
                       onClick={() => setOpenResponses(prev => ({ ...prev, [r.id as string]: !prev[r.id as string] }))}
@@ -450,7 +451,7 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
                         <span className="text-xs text-gray-500">
                           {r.submitted_at ? format(new Date(r.submitted_at as string), 'dd MMM yyyy HH:mm', { locale: es }) : ''}
                         </span>
-                        {r.is_anonymous && <span className="text-xs bg-[#2a2a4a] text-gray-500 px-2 py-0.5 rounded">Anónimo</span>}
+                        {!!r.is_anonymous && <span className="text-xs bg-[#2a2a4a] text-gray-500 px-2 py-0.5 rounded">Anónimo</span>}
                       </div>
                       {openResponses[r.id as string] ? <ChevronDown size={14} className="text-gray-600" /> : <ChevronRight size={14} className="text-gray-600" />}
                     </button>
@@ -464,7 +465,7 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs text-gray-500">{q.question_text}</p>
                                 <p className="text-sm text-gray-200 mt-0.5">
-                                  {ans?.answer_scale != null ? `${ans.answer_scale}/5` : ans?.answer_text ?? <span className="text-gray-600 italic">Sin respuesta</span>}
+                                  {ans?.answer_scale != null ? `${ans.answer_scale}/5` : ans?.answer_text != null ? String(ans.answer_text) : <span className="text-gray-600 italic">Sin respuesta</span>}
                                 </p>
                               </div>
                             </div>
