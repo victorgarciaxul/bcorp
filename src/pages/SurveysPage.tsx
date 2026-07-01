@@ -188,23 +188,41 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
   }
 
   const saveQuestion = async (data: Partial<SurveyQuestion> & { id?: string }) => {
+    const maxIdx = questions.length > 0 ? Math.max(...questions.map(q => q.order_index)) : 0
     if (data.id) {
-      await sql`
-        UPDATE survey_questions SET
-          question_text = ${data.question_text ?? ''},
-          question_type = ${data.question_type ?? 'scale'},
-          category = ${data.category ?? null},
-          description = ${data.description ?? null},
-          options = ${data.options ?? null},
-          is_required = ${data.is_required ?? true}
-        WHERE id = ${data.id}
-      `
+      try {
+        await sql`
+          UPDATE survey_questions SET
+            question_text = ${data.question_text ?? ''},
+            question_type = ${data.question_type ?? 'scale'},
+            category = ${data.category ?? null},
+            description = ${data.description ?? null},
+            options = ${data.options ?? null},
+            is_required = ${data.is_required ?? true}
+          WHERE id = ${data.id}
+        `
+      } catch {
+        await sql`
+          UPDATE survey_questions SET
+            question_text = ${data.question_text ?? ''},
+            question_type = ${data.question_type ?? 'scale'},
+            category = ${data.category ?? null},
+            is_required = ${data.is_required ?? true}
+          WHERE id = ${data.id}
+        `
+      }
     } else {
-      const maxIdx = questions.length > 0 ? Math.max(...questions.map(q => q.order_index)) : 0
-      await sql`
-        INSERT INTO survey_questions (survey_id, question_text, question_type, category, description, options, is_required, order_index)
-        VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.description ?? null}, ${data.options ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
-      `
+      try {
+        await sql`
+          INSERT INTO survey_questions (survey_id, question_text, question_type, category, description, options, is_required, order_index)
+          VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.description ?? null}, ${data.options ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
+        `
+      } catch {
+        await sql`
+          INSERT INTO survey_questions (survey_id, question_text, question_type, category, is_required, order_index)
+          VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
+        `
+      }
     }
     await loadQuestions()
     setEditingQ(null)
@@ -623,18 +641,25 @@ function QuestionEditor({
 
   const needsOptions = type === 'multi_select' || type === 'custom_select'
 
+  const [saveError, setSaveError] = useState('')
+
   const handleSave = async () => {
     if (!text.trim()) return
     setSaving(true)
-    await onSave({
-      id: initial?.id,
-      question_text: text.trim(),
-      question_type: type as SurveyQuestion['question_type'],
-      category: category.trim() || null as unknown as string,
-      description: description.trim() || null as unknown as string,
-      options: needsOptions ? options.trim() || null as unknown as string : null as unknown as string,
-      is_required: isRequired,
-    })
+    setSaveError('')
+    try {
+      await onSave({
+        id: initial?.id,
+        question_text: text.trim(),
+        question_type: type as SurveyQuestion['question_type'],
+        category: category.trim() || null as unknown as string,
+        description: description.trim() || null as unknown as string,
+        options: needsOptions ? options.trim() || null as unknown as string : null as unknown as string,
+        is_required: isRequired,
+      })
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Error al guardar')
+    }
     setSaving(false)
   }
 
@@ -672,6 +697,7 @@ function QuestionEditor({
             placeholder="Opción 1&#10;Opción 2&#10;Opción 3" className={inputCls + ' resize-none font-mono text-xs'} />
         </div>
       )}
+      {saveError && <p className="text-xs text-red-400 bg-red-900/20 px-3 py-2 rounded-lg">{saveError}</p>}
       <div className="flex items-center justify-between pt-1">
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={isRequired} onChange={e => setIsRequired(e.target.checked)}
