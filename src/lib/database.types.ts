@@ -38,6 +38,7 @@ export type Survey = {
   closing_text: string | null
   year: number
   status: 'draft' | 'active' | 'closed'
+  owner_email: string | null
   created_at: string
 }
 

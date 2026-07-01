@@ -1,5 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { isLocalAuth, setLocalAuth } from './lib/demo'
+import Layout from './components/layout/Layout'
+import Login from './pages/Login'
+import DashboardPage from './pages/DashboardPage'
+import PlanPage from './pages/PlanPage'
+import SuggestionsPage from './pages/SuggestionsPage'
+import SurveysPage from './pages/SurveysPage'
+import EncuestasCarlaPage from './pages/EncuestasCarlaPage'
+import SuggestionForm from './pages/public/SuggestionForm'
+import SurveyFormPage from './pages/public/SurveyFormPage'
 
 // SSO: ejecutar sincrónicamente antes de cualquier render para que
 // ProtectedRoute ya vea la sesión activa desde el primer ciclo
@@ -13,17 +22,17 @@ import { isLocalAuth, setLocalAuth } from './lib/demo'
   localStorage.setItem('xul_tracker_email', ssoEmail.toLowerCase())
   window.history.replaceState({}, '', window.location.pathname)
 })()
-import Layout from './components/layout/Layout'
-import Login from './pages/Login'
-import DashboardPage from './pages/DashboardPage'
-import PlanPage from './pages/PlanPage'
-import SuggestionsPage from './pages/SuggestionsPage'
-import SurveysPage from './pages/SurveysPage'
-import SuggestionForm from './pages/public/SuggestionForm'
-import SurveyFormPage from './pages/public/SurveyFormPage'
+
+const CARLA_EMAIL = 'carlagarcia@xul.es'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isLocalAuth()) { window.location.replace('https://appcenter.xul.es?return_to=' + encodeURIComponent(window.location.origin)); return null; }
+  return <>{children}</>
+}
+
+function CarlaRoute({ children }: { children: React.ReactNode }) {
+  const email = localStorage.getItem('xul_tracker_email') ?? ''
+  if (email !== CARLA_EMAIL) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -40,6 +49,7 @@ export default function App() {
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/sugerencias" element={<SuggestionsPage />} />
           <Route path="/encuestas" element={<SurveysPage />} />
+          <Route path="/encuestas-carla" element={<CarlaRoute><EncuestasCarlaPage /></CarlaRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

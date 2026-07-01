@@ -20,7 +20,11 @@ const STATUS_COLORS: Record<string, string> = {
   closed: 'bg-blue-900/50 text-blue-400',
 }
 
-export default function SurveysPage() {
+export default function SurveysPage({ ownerEmail, title: pageTitle, subtitle }: {
+  ownerEmail?: string
+  title?: string
+  subtitle?: string
+} = {}) {
   const [surveys, setSurveys] = useState<Survey[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -28,7 +32,9 @@ export default function SurveysPage() {
 
   const fetchSurveys = async () => {
     setLoading(true)
-    const data = await sql`SELECT * FROM surveys ORDER BY created_at DESC`
+    const data = ownerEmail
+      ? await sql`SELECT * FROM surveys WHERE owner_email = ${ownerEmail} ORDER BY created_at DESC`
+      : await sql`SELECT * FROM surveys WHERE owner_email IS NULL ORDER BY created_at DESC`
     setSurveys(data as Survey[])
     setLoading(false)
   }
@@ -37,8 +43,8 @@ export default function SurveysPage() {
 
   const createSurvey = async (title: string, description: string) => {
     const [survey] = await sql`
-      INSERT INTO surveys (title, description, year, status)
-      VALUES (${title}, ${description || null}, ${new Date().getFullYear()}, 'draft')
+      INSERT INTO surveys (title, description, year, status, owner_email)
+      VALUES (${title}, ${description || null}, ${new Date().getFullYear()}, 'draft', ${ownerEmail ?? null})
       RETURNING *
     `
     if (survey) {
@@ -67,8 +73,8 @@ export default function SurveysPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Encuestas de Satisfacción</h1>
-          <p className="text-gray-500 text-sm mt-1">Gestiona y analiza las encuestas del equipo</p>
+          <h1 className="text-2xl font-bold text-white">{pageTitle ?? 'Encuestas de Satisfacción'}</h1>
+          <p className="text-gray-500 text-sm mt-1">{subtitle ?? 'Gestiona y analiza las encuestas del equipo'}</p>
         </div>
         <button onClick={() => setCreating(true)}
           className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors">
