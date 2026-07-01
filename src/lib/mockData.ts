@@ -45,7 +45,7 @@ export const mockSuggestions: Suggestion[] = [
 ]
 
 export const mockSurveys: Survey[] = [
-  { id: 'sv1', title: 'Encuesta de Satisfacción 2025', description: 'Encuesta anual de clima laboral', welcome_text: null, closing_text: null, year: 2025, status: 'closed', created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: 'sv1', title: 'Encuesta de Satisfacción 2025', description: 'Encuesta anual de clima laboral', welcome_text: null, closing_text: null, year: 2025, status: 'closed', owner_email: null, created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() },
 ]
 
 export const mockSurveyQuestions: SurveyQuestion[] = [
