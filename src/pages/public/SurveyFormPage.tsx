@@ -104,8 +104,8 @@ export default function SurveyFormPage() {
         answerText = String(ans)
       }
       await sql`
-        INSERT INTO survey_answers (response_id, question_id, answer_text, answer_scale)
-        VALUES (${responseId}, ${q.id}, ${answerText}, ${answerScale})
+        INSERT INTO survey_answers (id, response_id, question_id, answer_text, answer_scale)
+        VALUES (gen_random_uuid(), ${responseId}, ${q.id}, ${answerText}, ${answerScale})
       `
     }
 
