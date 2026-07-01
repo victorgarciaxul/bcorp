@@ -214,13 +214,13 @@ function SurveyModal({ survey, onClose, onRefresh }: { survey: Survey; onClose: 
     } else {
       try {
         await sql`
-          INSERT INTO survey_questions (survey_id, question_text, question_type, category, description, options, is_required, order_index)
-          VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.description ?? null}, ${data.options ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
+          INSERT INTO survey_questions (id, survey_id, question_text, question_type, category, description, options, is_required, order_index)
+          VALUES (gen_random_uuid(), ${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.description ?? null}, ${data.options ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
         `
       } catch {
         await sql`
-          INSERT INTO survey_questions (survey_id, question_text, question_type, category, is_required, order_index)
-          VALUES (${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
+          INSERT INTO survey_questions (id, survey_id, question_text, question_type, category, is_required, order_index)
+          VALUES (gen_random_uuid(), ${survey.id}, ${data.question_text ?? ''}, ${data.question_type ?? 'scale'}, ${data.category ?? null}, ${data.is_required ?? true}, ${maxIdx + 1})
         `
       }
     }
